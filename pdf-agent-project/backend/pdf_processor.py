@@ -8,12 +8,25 @@ from pathlib import Path
 
 import pymupdf as fitz
 
-FIELD_KEYS = ("parentFio", "parentPassport", "childFio", "childPassport")
+FIELD_KEYS = (
+    "workerFio",
+    "workerPassport",
+    "fatherSurname",
+    "fatherGiven",
+    "fatherPassport",
+    "motherSurname",
+    "motherGiven",
+    "motherPassport",
+)
 FIELD_TITLES = {
-    "parentFio": "ФИО родителя",
-    "parentPassport": "Паспорт родителя",
-    "childFio": "ФИО ребенка",
-    "childPassport": "Паспорт / свидетельство ребенка",
+    "workerFio": "ФИО работника",
+    "workerPassport": "Паспорт работника",
+    "fatherSurname": "Фамилия отца",
+    "fatherGiven": "Имя отца",
+    "fatherPassport": "Паспорт отца",
+    "motherSurname": "Фамилия матери",
+    "motherGiven": "Имя матери",
+    "motherPassport": "Паспорт матери",
 }
 DEFAULT_FONT_SIZE = 11.0
 ANCHOR_FIELD_WIDTH = 300.0
@@ -46,6 +59,7 @@ class _Placement:
     source_rect: fitz.Rect
     value: str
     fontsize: float
+    prefix: str = ""
 
 
 def process_pdf_bytes(pdf_bytes: bytes, payload: object) -> bytes:
@@ -63,10 +77,11 @@ def process_pdf_bytes(pdf_bytes: bytes, payload: object) -> bytes:
     doc: fitz.Document | None = None
     try:
         doc = _open_document(pdf_bytes)
-        placements = [
-            _locate(doc, needles[key], values[key], FIELD_TITLES[key])
-            for key in FIELD_KEYS
-        ]
+        placements: list[_Placement] = []
+        for key in FIELD_KEYS:
+            placements.extend(
+                _locate_all(doc, needles[key], values[key], FIELD_TITLES[key], mode)
+            )
         font = fitz.Font(fontfile=fontfile)
         loaded_pages: set[int] = set()
         for placement in placements:
@@ -145,27 +160,152 @@ def _search_strings(payload: dict, map_key: str) -> dict[str, str]:
     return needles
 
 
-def _locate(doc: fitz.Document, needle: str, value: str, title: str) -> _Placement:
+def _locate_all(
+    doc: fitz.Document,
+    needle: str,
+    value: str,
+    title: str,
+    mode: str,
+) -> list[_Placement]:
+    found: list[_Placement] = []
     for index, page in enumerate(doc):
         try:
-            hits = page.search_for(needle)
+            hits = [fitz.Rect(hit) for hit in page.search_for(needle)]
         except Exception as exc:
             raise PdfProcessError(
                 f"Не удалось найти строку «{needle}» ({title})."
             ) from exc
         if not hits:
             continue
-        rect = fitz.Rect(hits[0])
-        return _Placement(
-            page_index=index,
-            source_rect=rect,
-            value=value,
-            fontsize=_font_size_near(page, rect),
+        if mode == "anchor":
+            rect = hits[0]
+            found.append(
+                _Placement(
+                    page_index=index,
+                    source_rect=rect,
+                    value=value,
+                    fontsize=_font_size_near(page, rect),
+                )
+            )
+            return found
+        for rect in _whole_matches(page, hits, needle):
+            found.append(
+                _Placement(
+                    page_index=index,
+                    source_rect=rect,
+                    value=value,
+                    fontsize=_font_size_near(page, rect),
+                    prefix=_kept_prefix(page, rect, needle),
+                )
+            )
+    if not found:
+        raise PdfProcessError(
+            f"В документе не найдена строка «{needle}» ({title}).",
+            status_code=422,
         )
-    raise PdfProcessError(
-        f"В документе не найдена строка «{needle}» ({title}).",
-        status_code=422,
-    )
+    return found
+
+
+def _union(a: fitz.Rect, b: fitz.Rect) -> fitz.Rect:
+    return fitz.Rect(min(a.x0, b.x0), min(a.y0, b.y0), max(a.x1, b.x1), max(a.y1, b.y1))
+
+
+def _same_line(a: fitz.Rect, b: fitz.Rect) -> bool:
+    ay = (a.y0 + a.y1) / 2
+    by = (b.y0 + b.y1) / 2
+    return abs(ay - by) <= max(4.0, 0.65 * max(a.height, b.height))
+
+
+def _near_x(a: fitz.Rect, b: fitz.Rect) -> bool:
+    return a.x0 <= b.x1 + 14 and b.x0 <= a.x1 + 14
+
+
+def _cluster_rects(rects: list[fitz.Rect]) -> list[fitz.Rect]:
+    clusters: list[fitz.Rect] = []
+    for rect in sorted(rects, key=lambda item: ((item.y0 + item.y1) / 2, item.x0)):
+        placed = False
+        for index, cluster in enumerate(clusters):
+            if _same_line(cluster, rect) and _near_x(cluster, rect):
+                clusters[index] = _union(cluster, rect)
+                placed = True
+                break
+        if not placed:
+            clusters.append(fitz.Rect(rect))
+    changed = True
+    while changed:
+        changed = False
+        folded: list[fitz.Rect] = []
+        for rect in clusters:
+            placed = False
+            for index, cluster in enumerate(folded):
+                if _same_line(cluster, rect) and _near_x(cluster, rect):
+                    folded[index] = _union(cluster, rect)
+                    placed = True
+                    changed = True
+                    break
+            if not placed:
+                folded.append(rect)
+        clusters = folded
+    return clusters
+
+
+_PUNCT = str.maketrans("", "", ".,;:\"'«»()[]")
+
+
+def _norm_token(text: str) -> str:
+    return " ".join(text.replace("№", " ").translate(_PUNCT).split()).casefold()
+
+
+def _whole_matches(page: fitz.Page, hits: list[fitz.Rect], needle: str) -> list[fitz.Rect]:
+    needle_norm = _norm_token(needle)
+    words: list[tuple[fitz.Rect, str]] = []
+    for word in page.get_text("words"):
+        token = _norm_token(word[4])
+        if token:
+            words.append((fitz.Rect(word[:4]), token))
+    accepted: list[fitz.Rect] = []
+    for cluster in _cluster_rects(hits):
+        chosen: list[tuple[fitz.Rect, str]] = []
+        for rect, token in words:
+            inter = rect & cluster
+            if inter.is_empty or rect.get_area() <= 0:
+                continue
+            if inter.get_area() < 0.35 * min(rect.get_area(), cluster.get_area()):
+                continue
+            parts = needle_norm.split()
+            if token == needle_norm or token in parts or needle_norm in token:
+                chosen.append((rect, token))
+        unique: list[tuple[fitz.Rect, str]] = []
+        for rect, token in chosen:
+            if any(
+                abs(prev.x0 - rect.x0) < 2 and abs(prev.y0 - rect.y0) < 2 and prev_token == token
+                for prev, prev_token in unique
+            ):
+                continue
+            unique.append((rect, token))
+        unique.sort(key=lambda item: (item[0].x0, item[0].y0))
+        if " ".join(token for _, token in unique) != needle_norm:
+            continue
+        rect = unique[0][0]
+        for extra, _ in unique[1:]:
+            rect = _union(rect, extra)
+        accepted.append(rect)
+    return accepted
+
+
+def _kept_prefix(page: fitz.Page, rect: fitz.Rect, needle: str) -> str:
+    if needle.startswith("№"):
+        return ""
+    for word in page.get_text("words"):
+        word_rect = fitz.Rect(word[:4])
+        inter = word_rect & rect
+        if inter.is_empty or word_rect.get_area() <= 0:
+            continue
+        if inter.get_area() < 0.5 * word_rect.get_area():
+            continue
+        if str(word[4]).startswith("№"):
+            return "№"
+    return ""
 
 
 def _font_size_near(page: fitz.Page, rect: fitz.Rect) -> float:
@@ -197,14 +337,18 @@ def _apply_field(page: fitz.Page, placement: _Placement, mode: str, font: fitz.F
             fitz.Rect(source.x0 - 0.6, source.y0 - 0.6, source.x1 + 0.8, source.y1 + 0.8),
         )
         insert_x = source.x0
-        fontsize = placement.fontsize
+        fontsize = _fitted_size(font, placement.prefix + placement.value, placement.fontsize, redact_rect.width - 1)
+
+    written = placement.value
+    if placement.prefix and not written.startswith(placement.prefix):
+        written = f"{placement.prefix}{written}"
 
     page.add_redact_annot(redact_rect, fill=(1, 1, 1))
     _apply_redactions(page)
     point = fitz.Point(insert_x, source.y1 - max(1.0, placement.fontsize * 0.2))
     page.insert_text(
         point,
-        placement.value,
+        written,
         fontname=_FONT_NAME,
         fontsize=fontsize,
         color=(0, 0, 0),

@@ -1,11 +1,13 @@
 # Local PDF form editor
 
-Fills parent and child name and passport/certificate numbers into a PDF on this machine. The file and the personal fields stay in memory for the request and are not stored or sent to an external service.
+Fills a worker affidavit on this machine: the worker’s name and passport, plus the father’s and mother’s surname, given name, and passport. The file and the personal fields stay in memory for the request and are not stored or sent to an external service.
+
+The form opens in replace mode. Search strings match the printed affidavit: worker name and passport, and the parent cells. Anchor mode is still available; on the family table a 300px box to the right of a row label also covers the next columns.
 
 Two modes:
 
-- **Якоря** — find a label such as `ФИО родителя:` and write the value about 300px to its right.
-- **Рыбы** — find a placeholder such as `[ФИО_РОДИТЕЛЯ]` and replace it.
+- **Якоря** — find a label such as `Ф.И.О. работника:` and write the value about 300px to its right.
+- **Рыбы** — find the printed text, for example the worker’s full name, and replace every whole occurrence.
 
 ## Run
 

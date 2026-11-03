@@ -5,51 +5,77 @@ import axios from "axios";
 const API_URL = "http://localhost:8000/api/process-pdf";
 
 type Mode = "anchor" | "replace";
-type FieldKey = "parentFio" | "parentPassport" | "childFio" | "childPassport";
+type FieldKey =
+  | "workerFio"
+  | "workerPassport"
+  | "fatherSurname"
+  | "fatherGiven"
+  | "fatherPassport"
+  | "motherSurname"
+  | "motherGiven"
+  | "motherPassport";
 type SearchMap = Record<FieldKey, string>;
 
 const DEFAULT_ANCHORS: SearchMap = {
-  parentFio: "ФИО родителя:",
-  parentPassport: "Паспорт родителя:",
-  childFio: "ФИО ребенка:",
-  childPassport: "Паспорт / Свидетельство ребенка:",
+  workerFio: "Ф.И.О. работника:",
+  workerPassport: "Номер паспорта:",
+  fatherSurname: "Отец",
+  fatherGiven: "Father",
+  fatherPassport: "AE3211900",
+  motherSurname: "Мать",
+  motherGiven: "Mother",
+  motherPassport: "AE3220287",
 };
 
 const DEFAULT_DUMMIES: SearchMap = {
-  parentFio: "[ФИО_РОДИТЕЛЯ]",
-  parentPassport: "[ПАСПОРТ_РОДИТЕЛЯ]",
-  childFio: "[ФИО_РЕБЕНКА]",
-  childPassport: "[ПАСПОРТ_РЕБЕНКА]",
+  workerFio: "ARTIKOV JASURBEK",
+  workerPassport: "FA2807567",
+  fatherSurname: "ORTIQOV",
+  fatherGiven: "ALIJON",
+  fatherPassport: "AE3211900",
+  motherSurname: "ARTIKOVA",
+  motherGiven: "RAXNAMO",
+  motherPassport: "AE3220287",
 };
 
-const DATA_FIELDS: { key: FieldKey; label: string; placeholder: string }[] = [
+const DATA_FIELDS: { key: FieldKey; label: string; placeholder: string; group: string }[] = [
+  { key: "workerFio", label: "ФИО работника", placeholder: "фамилия и имя", group: "Работник" },
   {
-    key: "parentFio",
-    label: "ФИО родителя",
-    placeholder: "Иванова Мария Сергеевна",
+    key: "workerPassport",
+    label: "Паспорт работника (серия, номер)",
+    placeholder: "серия и номер",
+    group: "Работник",
   },
-  {
-    key: "parentPassport",
-    label: "Паспорт родителя (серия, номер)",
-    placeholder: "4510 123456",
-  },
-  {
-    key: "childFio",
-    label: "ФИО ребенка",
-    placeholder: "Иванов Пётр Алексеевич",
-  },
-  {
-    key: "childPassport",
-    label: "Паспорт / Свидетельство ребенка",
-    placeholder: "IV-АБ 123456",
-  },
+  { key: "fatherSurname", label: "Фамилия отца", placeholder: "фамилия", group: "Отец" },
+  { key: "fatherGiven", label: "Имя отца", placeholder: "имя", group: "Отец" },
+  { key: "fatherPassport", label: "Паспорт отца", placeholder: "серия и номер", group: "Отец" },
+  { key: "motherSurname", label: "Фамилия матери", placeholder: "фамилия", group: "Мать" },
+  { key: "motherGiven", label: "Имя матери", placeholder: "имя", group: "Мать" },
+  { key: "motherPassport", label: "Паспорт матери", placeholder: "серия и номер", group: "Мать" },
 ];
 
+const GROUPS = ["Работник", "Отец", "Мать"] as const;
+
 const SEARCH_LABELS: Record<FieldKey, string> = {
-  parentFio: "ФИО родителя",
-  parentPassport: "Паспорт родителя",
-  childFio: "ФИО ребенка",
-  childPassport: "Паспорт / свидетельство ребенка",
+  workerFio: "ФИО работника",
+  workerPassport: "Паспорт работника",
+  fatherSurname: "Фамилия отца",
+  fatherGiven: "Имя отца",
+  fatherPassport: "Паспорт отца",
+  motherSurname: "Фамилия матери",
+  motherGiven: "Имя матери",
+  motherPassport: "Паспорт матери",
+};
+
+const EMPTY_VALUES: SearchMap = {
+  workerFio: "",
+  workerPassport: "",
+  fatherSurname: "",
+  fatherGiven: "",
+  fatherPassport: "",
+  motherSurname: "",
+  motherGiven: "",
+  motherPassport: "",
 };
 
 const inputClass =
@@ -118,11 +144,8 @@ function isPdfFile(file: File): boolean {
 
 export default function App() {
   const [dark, setDark] = useState(prefersDark);
-  const [parentFio, setParentFio] = useState("");
-  const [parentPassport, setParentPassport] = useState("");
-  const [childFio, setChildFio] = useState("");
-  const [childPassport, setChildPassport] = useState("");
-  const [mode, setMode] = useState<Mode>("anchor");
+  const [values, setValues] = useState<SearchMap>(EMPTY_VALUES);
+  const [mode, setMode] = useState<Mode>("replace");
   const [anchors, setAnchors] = useState<SearchMap>(DEFAULT_ANCHORS);
   const [dummies, setDummies] = useState<SearchMap>(DEFAULT_DUMMIES);
   const [file, setFile] = useState<File | null>(null);
@@ -136,18 +159,9 @@ export default function App() {
     document.documentElement.classList.toggle("dark", dark);
   }, [dark]);
 
-  const values: Record<FieldKey, string> = {
-    parentFio,
-    parentPassport,
-    childFio,
-    childPassport,
-  };
-  const setters: Record<FieldKey, (value: string) => void> = {
-    parentFio: setParentFio,
-    parentPassport: setParentPassport,
-    childFio: setChildFio,
-    childPassport: setChildPassport,
-  };
+  function setValue(key: FieldKey, value: string) {
+    setValues((current) => ({ ...current, [key]: value }));
+  }
 
   const dataReady = DATA_FIELDS.every((field) => values[field.key].trim().length > 0);
   const canSubmit = Boolean(file) && dataReady && !loading;
@@ -198,10 +212,9 @@ export default function App() {
     setResult(null);
 
     const payload = {
-      parentFio: parentFio.trim(),
-      parentPassport: parentPassport.trim(),
-      childFio: childFio.trim(),
-      childPassport: childPassport.trim(),
+      ...Object.fromEntries(
+        DATA_FIELDS.map((field) => [field.key, values[field.key].trim()]),
+      ),
       mode,
       anchors,
       dummies,
@@ -251,8 +264,8 @@ export default function App() {
           </p>
           <h1 className="display mt-2 text-3xl text-ink sm:text-4xl">Локальный редактор PDF</h1>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">
-            Вписывает ФИО и номера документов в печатную форму. Файл обрабатывается в памяти
-            и никуда не отправляется.
+            Меняет в аффидавите ФИО и паспорт работника и данные родителей — только там, где
+            форма их уже печатает. Файл обрабатывается в памяти и никуда не отправляется.
           </p>
         </div>
         <button
@@ -266,31 +279,20 @@ export default function App() {
 
       <form onSubmit={onSubmit} className="grid items-start gap-6 lg:grid-cols-2">
         <section className="rounded-2xl border border-line bg-raise p-5 shadow-card sm:p-6">
-          <FieldGroup title="Родитель">
-            {DATA_FIELDS.filter((field) => field.key.startsWith("parent")).map((field) => (
-              <TextField
-                key={field.key}
-                id={field.key}
-                label={field.label}
-                value={values[field.key]}
-                placeholder={field.placeholder}
-                onChange={setters[field.key]}
-              />
-            ))}
-          </FieldGroup>
-
-          <FieldGroup title="Ребенок" className="mt-6">
-            {DATA_FIELDS.filter((field) => field.key.startsWith("child")).map((field) => (
-              <TextField
-                key={field.key}
-                id={field.key}
-                label={field.label}
-                value={values[field.key]}
-                placeholder={field.placeholder}
-                onChange={setters[field.key]}
-              />
-            ))}
-          </FieldGroup>
+          {GROUPS.map((group, index) => (
+            <FieldGroup key={group} title={group} className={index === 0 ? "" : "mt-6"}>
+              {DATA_FIELDS.filter((field) => field.group === group).map((field) => (
+                <TextField
+                  key={field.key}
+                  id={field.key}
+                  label={field.label}
+                  value={values[field.key]}
+                  placeholder={field.placeholder}
+                  onChange={(value) => setValue(field.key, value)}
+                />
+              ))}
+            </FieldGroup>
+          ))}
 
           <fieldset className="mt-6">
             <legend className="text-sm font-semibold text-ink">Режим заполнения</legend>
@@ -319,8 +321,8 @@ export default function App() {
             <div className="space-y-3 px-4 pb-4">
               <p className="text-xs leading-5 text-muted">
                 {mode === "anchor"
-                  ? "Якорь — подпись в PDF. Значение будет вписано справа от неё."
-                  : "Рыба — точный текст-заглушка, который будет заменён."}
+                  ? "Якорь — подпись в PDF. Значение будет вписано справа от неё. Для таблицы семьи это заденет соседние колонки."
+                  : "Рыба — текст, который уже напечатан в аффидавите. Заменяются все целые вхождения, без чужих фамилий."}
               </p>
               {DATA_FIELDS.map((field) => (
                 <label key={`${mode}-${field.key}`} htmlFor={`search-${field.key}`} className="block text-sm">
@@ -403,7 +405,7 @@ export default function App() {
           </button>
           {!canSubmit && !loading && (
             <p className="mt-2 text-center text-xs text-muted">
-              Кнопка включится, когда загружен PDF и заполнены все четыре поля.
+              Кнопка включится, когда загружен PDF и заполнены все поля. Новые значения вводите сами: текущий текст формы не подставляется.
             </p>
           )}
 
