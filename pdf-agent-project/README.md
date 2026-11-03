@@ -2,7 +2,7 @@
 
 Fills a worker affidavit on this machine: the worker’s name and passport, the father’s and mother’s surname, given name, and passport, and the spouse’s and both children’s names and passports. The file and the personal fields stay in memory for the request and are not stored or sent to an external service.
 
-The form opens in replace mode with the affidavit already selected (`frontend/public/affidavit-artikov-zhasurbek.pdf`). Drag and drop or choose another PDF to replace it. Search strings match the text printed in that file. The children’s passport cells are blank, so those values are written into the empty cell to the left of each child’s surname. Anchor mode is still available; on the family table a 300px box to the right of a row label also covers the next columns.
+The form opens in replace mode with the affidavit already selected (`frontend/public/affidavit-artikov-zhasurbek.pdf`). Drag and drop or choose another PDF to replace it. Search strings match the text printed in that file. The children’s passport cells are blank, so those values are written into the empty cell to the left of each child’s surname. A hyphen in a parent, spouse, or child name or passport is written into that cell. For a spouse or child name, one hyphen fills both the surname and the given name. Anchor mode is still available; on the family table a 300px box to the right of a row label also covers the next columns.
 
 Two modes:
 

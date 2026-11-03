@@ -204,9 +204,16 @@ def _split_fio(text: str, title: str) -> tuple[str, str]:
     return parts[0], " ".join(parts[1:])
 
 
+def _pair_values(value: str, title: str) -> tuple[str, str]:
+    # A typed hyphen is the value for both cells, not an empty field.
+    if value == "-":
+        return "-", "-"
+    return _split_fio(value, title)
+
+
 def _replace_split_fio(doc: fitz.Document, needle: str, value: str, title: str) -> list[_Placement]:
     surname_needle, given_needle = _split_fio(needle, title)
-    surname_value, given_value = _split_fio(value, title)
+    surname_value, given_value = _pair_values(value, title)
     return [
         *_locate_all(doc, surname_needle, surname_value, title, "replace"),
         *_locate_all(doc, given_needle, given_value, title, "replace"),
