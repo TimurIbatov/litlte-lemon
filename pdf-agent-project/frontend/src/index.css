@@ -1,0 +1,59 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+  --bg: #f3efe6;
+  --bg-raise: #fffdf8;
+  --ink: #1c1915;
+  --muted: #655d52;
+  --line: #e3d9c6;
+  --accent: #0e6b52;
+  --accent-ink: #f4fff9;
+  --danger: #8d2b2b;
+  --danger-bg: #fdecec;
+  --glow: rgba(14, 107, 82, 0.1);
+}
+
+.dark {
+  color-scheme: dark;
+  --bg: #12110e;
+  --bg-raise: #1c1a16;
+  --ink: #f6f1e7;
+  --muted: #b7ad9f;
+  --line: #343027;
+  --accent: #3dce8e;
+  --accent-ink: #062216;
+  --danger: #ffb4b0;
+  --danger-bg: #3a1d1c;
+  --glow: rgba(61, 206, 142, 0.1);
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  background:
+    radial-gradient(1000px 420px at 8% -10%, var(--glow), transparent 55%),
+    var(--bg);
+  color: var(--ink);
+  font-family: "Segoe UI", "Helvetica Neue", sans-serif;
+}
+
+::selection {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.display {
+  font-family: Palatino, "Palatino Linotype", "Iowan Old Style", Georgia, serif;
+}
+
+summary::-webkit-details-marker {
+  display: none;
+}
