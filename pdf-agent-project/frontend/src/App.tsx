@@ -10,55 +10,79 @@ type Mode = "anchor" | "replace";
 type FieldKey =
   | "workerFio"
   | "workerPassport"
+  | "workerDob"
   | "fatherSurname"
   | "fatherGiven"
   | "fatherPassport"
+  | "fatherDob"
   | "motherSurname"
   | "motherGiven"
   | "motherPassport"
+  | "motherDob"
   | "spouseFio"
   | "spousePassport"
+  | "spouseDob"
   | "child1Fio"
   | "child1Passport"
+  | "child1Dob"
   | "child2Fio"
-  | "child2Passport";
+  | "child2Passport"
+  | "child2Dob";
 type SearchMap = Record<FieldKey, string>;
 
 const DEFAULT_ANCHORS: SearchMap = {
   workerFio: "Ф.И.О. работника:",
   workerPassport: "Номер паспорта:",
+  workerDob: "",
   fatherSurname: "Отец",
   fatherGiven: "Father",
   fatherPassport: "AE3211900",
+  fatherDob: "12.02.1952",
   motherSurname: "Мать",
   motherGiven: "Mother",
   motherPassport: "AE3220287",
+  motherDob: "11.12.1956",
   spouseFio: "СУПРУГА",
   spousePassport: "AD4559629",
+  spouseDob: "15.12.1994",
   child1Fio: "ДЕТИ",
   child1Passport: "",
+  child1Dob: "23.05.2014",
   child2Fio: "CHild",
   child2Passport: "",
+  child2Dob: "22.01.2018",
 };
 
 const DEFAULT_DUMMIES: SearchMap = {
   workerFio: "ARTIKOV JASURBEK",
   workerPassport: "FA2807567",
+  workerDob: "",
   fatherSurname: "ORTIQOV",
   fatherGiven: "ALIJON",
   fatherPassport: "AE3211900",
+  fatherDob: "12.02.1952",
   motherSurname: "ARTIKOVA",
   motherGiven: "RAXNAMO",
   motherPassport: "AE3220287",
+  motherDob: "11.12.1956",
   spouseFio: "ARTIQOVA MARHABO",
   spousePassport: "AD4559629",
+  spouseDob: "15.12.1994",
   child1Fio: "ALIJONOV ABDUSALOM",
   child1Passport: "",
+  child1Dob: "23.05.2014",
   child2Fio: "ALIJONOVA XUMORAXON",
   child2Passport: "",
+  child2Dob: "22.01.2018",
 };
 
-const DATA_FIELDS: { key: FieldKey; label: string; placeholder: string; group: string }[] = [
+const DATA_FIELDS: {
+  key: FieldKey;
+  label: string;
+  placeholder: string;
+  group: string;
+  hint?: string;
+}[] = [
   { key: "workerFio", label: "ФИО работника", placeholder: "фамилия и имя", group: "Работник" },
   {
     key: "workerPassport",
@@ -66,64 +90,85 @@ const DATA_FIELDS: { key: FieldKey; label: string; placeholder: string; group: s
     placeholder: "серия и номер",
     group: "Работник",
   },
-  { key: "fatherSurname", label: "Фамилия отца", placeholder: "фамилия", group: "Отец" },
-  { key: "fatherGiven", label: "Имя отца", placeholder: "имя", group: "Отец" },
-  { key: "fatherPassport", label: "Паспорт отца", placeholder: "серия и номер", group: "Отец" },
-  { key: "motherSurname", label: "Фамилия матери", placeholder: "фамилия", group: "Мать" },
-  { key: "motherGiven", label: "Имя матери", placeholder: "имя", group: "Мать" },
-  { key: "motherPassport", label: "Паспорт матери", placeholder: "серия и номер", group: "Мать" },
-  { key: "spouseFio", label: "ФИО супруги", placeholder: "фамилия имя", group: "Супруга" },
-  { key: "spousePassport", label: "Паспорт супруги", placeholder: "серия и номер", group: "Супруга" },
-  { key: "child1Fio", label: "ФИО ребенка 1", placeholder: "фамилия имя", group: "Ребенок 1" },
+  {
+    key: "workerDob",
+    label: "Дата рождения работника",
+    placeholder: "ДД.ММ.ГГГГ или -",
+    group: "Работник",
+    hint: "В этом бланке даты рождения работника нет, поэтому поле не впечатывается.",
+  },
+  { key: "fatherSurname", label: "Фамилия отца", placeholder: "фамилия или -", group: "Отец" },
+  { key: "fatherGiven", label: "Имя отца", placeholder: "имя или -", group: "Отец" },
+  { key: "fatherPassport", label: "Паспорт отца", placeholder: "серия и номер или -", group: "Отец" },
+  { key: "fatherDob", label: "Дата рождения отца", placeholder: "ДД.ММ.ГГГГ или -", group: "Отец" },
+  { key: "motherSurname", label: "Фамилия матери", placeholder: "фамилия или -", group: "Мать" },
+  { key: "motherGiven", label: "Имя матери", placeholder: "имя или -", group: "Мать" },
+  {
+    key: "motherPassport",
+    label: "Паспорт матери",
+    placeholder: "серия и номер или -",
+    group: "Мать",
+  },
+  { key: "motherDob", label: "Дата рождения матери", placeholder: "ДД.ММ.ГГГГ или -", group: "Мать" },
+  { key: "spouseFio", label: "ФИО супруги", placeholder: "фамилия имя или -", group: "Супруга" },
+  {
+    key: "spousePassport",
+    label: "Паспорт супруги",
+    placeholder: "серия и номер или -",
+    group: "Супруга",
+  },
+  { key: "spouseDob", label: "Дата рождения супруги", placeholder: "ДД.ММ.ГГГГ или -", group: "Супруга" },
+  { key: "child1Fio", label: "ФИО ребенка 1", placeholder: "фамилия имя или -", group: "Ребенок 1" },
   {
     key: "child1Passport",
     label: "Паспорт ребенка 1",
-    placeholder: "серия и номер",
+    placeholder: "серия и номер или -",
     group: "Ребенок 1",
   },
-  { key: "child2Fio", label: "ФИО ребенка 2", placeholder: "фамилия имя", group: "Ребенок 2" },
+  {
+    key: "child1Dob",
+    label: "Дата рождения ребенка 1",
+    placeholder: "ДД.ММ.ГГГГ или -",
+    group: "Ребенок 1",
+  },
+  { key: "child2Fio", label: "ФИО ребенка 2", placeholder: "фамилия имя или -", group: "Ребенок 2" },
   {
     key: "child2Passport",
     label: "Паспорт ребенка 2",
-    placeholder: "серия и номер",
+    placeholder: "серия и номер или -",
+    group: "Ребенок 2",
+  },
+  {
+    key: "child2Dob",
+    label: "Дата рождения ребенка 2",
+    placeholder: "ДД.ММ.ГГГГ или -",
     group: "Ребенок 2",
   },
 ];
 
 const GROUPS = ["Работник", "Отец", "Мать", "Супруга", "Ребенок 1", "Ребенок 2"] as const;
 
-const SEARCH_LABELS: Record<FieldKey, string> = {
-  workerFio: "ФИО работника",
-  workerPassport: "Паспорт работника",
-  fatherSurname: "Фамилия отца",
-  fatherGiven: "Имя отца",
-  fatherPassport: "Паспорт отца",
-  motherSurname: "Фамилия матери",
-  motherGiven: "Имя матери",
-  motherPassport: "Паспорт матери",
-  spouseFio: "ФИО супруги",
-  spousePassport: "Паспорт супруги",
-  child1Fio: "ФИО ребенка 1",
-  child1Passport: "Паспорт ребенка 1",
-  child2Fio: "ФИО ребенка 2",
-  child2Passport: "Паспорт ребенка 2",
-};
-
 const EMPTY_VALUES: SearchMap = {
   workerFio: "",
   workerPassport: "",
+  workerDob: "",
   fatherSurname: "",
   fatherGiven: "",
   fatherPassport: "",
+  fatherDob: "",
   motherSurname: "",
   motherGiven: "",
   motherPassport: "",
+  motherDob: "",
   spouseFio: "",
   spousePassport: "",
+  spouseDob: "",
   child1Fio: "",
   child1Passport: "",
+  child1Dob: "",
   child2Fio: "",
   child2Passport: "",
+  child2Dob: "",
 };
 
 const inputClass =
@@ -194,8 +239,6 @@ export default function App() {
   const [dark, setDark] = useState(prefersDark);
   const [values, setValues] = useState<SearchMap>(EMPTY_VALUES);
   const [mode, setMode] = useState<Mode>("replace");
-  const [anchors, setAnchors] = useState<SearchMap>(DEFAULT_ANCHORS);
-  const [dummies, setDummies] = useState<SearchMap>(DEFAULT_DUMMIES);
   const [file, setFile] = useState<File | null>(null);
   const [fileSource, setFileSource] = useState<"bundled" | "upload" | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
@@ -239,7 +282,6 @@ export default function App() {
 
   const dataReady = DATA_FIELDS.every((field) => values[field.key].trim().length > 0);
   const canSubmit = Boolean(file) && dataReady && !loading;
-  const searchMap = mode === "anchor" ? anchors : dummies;
 
   async function acceptFile(next: File | null, source: "bundled" | "upload" = "upload") {
     if (!next) return;
@@ -266,14 +308,6 @@ export default function App() {
     setError(null);
   }
 
-  function updateSearch(key: FieldKey, value: string) {
-    if (mode === "anchor") {
-      setAnchors((current) => ({ ...current, [key]: value }));
-    } else {
-      setDummies((current) => ({ ...current, [key]: value }));
-    }
-  }
-
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
     if (!file || !canSubmit) return;
@@ -287,8 +321,8 @@ export default function App() {
         DATA_FIELDS.map((field) => [field.key, values[field.key].trim()]),
       ),
       mode,
-      anchors,
-      dummies,
+      anchors: DEFAULT_ANCHORS,
+      dummies: DEFAULT_DUMMIES,
     };
     const body = new FormData();
     body.append("file", file);
@@ -335,8 +369,8 @@ export default function App() {
           </p>
           <h1 className="display mt-2 text-3xl text-ink sm:text-4xl">Локальный редактор PDF</h1>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">
-            Меняет в аффидавите ФИО и паспорт работника, родителей, супруги и обоих детей —
-            только в этих ячейках. Файл обрабатывается в памяти и никуда не отправляется.
+            Меняет в аффидавите ФИО, паспорт и дату рождения. Для родителей, супруги и детей
+            «-» вписывается в ячейку. Файл обрабатывается в памяти и никуда не отправляется.
           </p>
         </div>
         <button
@@ -359,6 +393,7 @@ export default function App() {
                   label={field.label}
                   value={values[field.key]}
                   placeholder={field.placeholder}
+                  hint={field.hint}
                   onChange={(value) => setValue(field.key, value)}
                 />
               ))}
@@ -381,36 +416,6 @@ export default function App() {
             </div>
           </fieldset>
 
-          <details className="group mt-4 rounded-xl border border-line bg-bg/70">
-            <summary className="cursor-pointer list-none px-4 py-3 text-sm font-medium text-ink">
-              <span className="flex items-center justify-between gap-3">
-                Строки поиска
-                <span className="text-xs text-muted group-open:hidden">Показать</span>
-                <span className="hidden text-xs text-muted group-open:inline">Скрыть</span>
-              </span>
-            </summary>
-            <div className="space-y-3 px-4 pb-4">
-              <p className="text-xs leading-5 text-muted">
-                {mode === "anchor"
-                  ? "Якорь — подпись в PDF. Значение будет вписано справа от неё. Для таблицы семьи это заденет соседние колонки."
-                  : "Рыба — текст, который уже напечатан. Пустой паспорт ребенка — это пустая ячейка слева от его фамилии."}
-              </p>
-              {DATA_FIELDS.map((field) => (
-                <label key={`${mode}-${field.key}`} htmlFor={`search-${field.key}`} className="block text-sm">
-                  <span className="mb-1 block text-muted">
-                    {mode === "anchor" ? "Якорь" : "Рыба"}: {SEARCH_LABELS[field.key]}
-                  </span>
-                  <input
-                    id={`search-${field.key}`}
-                    value={searchMap[field.key]}
-                    onChange={(event) => updateSearch(field.key, event.target.value)}
-                    spellCheck={false}
-                    className={`${inputClass} font-mono text-[13px]`}
-                  />
-                </label>
-              ))}
-            </div>
-          </details>
         </section>
 
         <section className="rounded-2xl border border-line bg-raise p-5 shadow-card sm:p-6 lg:sticky lg:top-6">
@@ -486,7 +491,7 @@ export default function App() {
           {!canSubmit && !loading && (
             <p className="mt-2 text-center text-xs text-muted">
               {file
-                ? "Кнопка включится, когда заполнены все поля. Для родителей, супруги и детей «-» тоже значение: оно вписывается в ячейку."
+                ? "Кнопка включится, когда заполнены все поля. «-» в полях семьи и в датах тоже значение."
                 : "Кнопка включится, когда бланк открыт и заполнены все поля."}
             </p>
           )}
@@ -534,12 +539,14 @@ function TextField({
   label,
   value,
   placeholder,
+  hint,
   onChange,
 }: {
   id: string;
   label: string;
   value: string;
   placeholder: string;
+  hint?: string;
   onChange: (value: string) => void;
 }) {
   return (
@@ -555,6 +562,7 @@ function TextField({
         onChange={(event) => onChange(event.target.value)}
         className={inputClass}
       />
+      {hint && <span className="mt-1 block text-xs leading-5 text-muted">{hint}</span>}
     </label>
   );
 }

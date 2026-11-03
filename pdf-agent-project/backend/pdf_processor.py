@@ -12,34 +12,46 @@ import pymupdf as fitz
 FIELD_KEYS = (
     "workerFio",
     "workerPassport",
+    "workerDob",
     "fatherSurname",
     "fatherGiven",
     "fatherPassport",
+    "fatherDob",
     "motherSurname",
     "motherGiven",
     "motherPassport",
+    "motherDob",
     "spouseFio",
     "spousePassport",
+    "spouseDob",
     "child1Fio",
     "child1Passport",
+    "child1Dob",
     "child2Fio",
     "child2Passport",
+    "child2Dob",
 )
 FIELD_TITLES = {
     "workerFio": "ФИО работника",
     "workerPassport": "Паспорт работника",
+    "workerDob": "Дата рождения работника",
     "fatherSurname": "Фамилия отца",
     "fatherGiven": "Имя отца",
     "fatherPassport": "Паспорт отца",
+    "fatherDob": "Дата рождения отца",
     "motherSurname": "Фамилия матери",
     "motherGiven": "Имя матери",
     "motherPassport": "Паспорт матери",
+    "motherDob": "Дата рождения матери",
     "spouseFio": "ФИО супруги",
     "spousePassport": "Паспорт супруги",
+    "spouseDob": "Дата рождения супруги",
     "child1Fio": "ФИО ребенка 1",
     "child1Passport": "Паспорт ребенка 1",
+    "child1Dob": "Дата рождения ребенка 1",
     "child2Fio": "ФИО ребенка 2",
     "child2Passport": "Паспорт ребенка 2",
+    "child2Dob": "Дата рождения ребенка 2",
 }
 # Surname and given name are separate cells. The form stores them as one FIO string.
 PAIR_FIO_FIELDS = frozenset({"spouseFio", "child1Fio", "child2Fio"})
@@ -48,22 +60,19 @@ BLANK_PASSPORT_OF = {
     "child1Passport": "child1Fio",
     "child2Passport": "child2Fio",
 }
+# This affidavit has no printed worker date of birth.
+NO_PRINTED_DATE = frozenset({"workerDob"})
 _PASSPORT_TOKEN = re.compile(r"^[A-Z]{1,3}\d{5,}$")
+_DASH_VALUES = frozenset({"-", "–", "—", "−", "‑"})
 DEFAULT_FONT_SIZE = 11.0
 ANCHOR_FIELD_WIDTH = 300.0
 MAX_VALUE_LENGTH = 400
 MAX_NEEDLE_LENGTH = 300
-_FONT_NAME = "formcyr"
+_FONT_NAME = "formtnr"
 
 _FONT_CANDIDATES = (
-    Path(__file__).resolve().parent / "fonts" / "DejaVuSans.ttf",
-    Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
-    Path("/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"),
-    Path("/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf"),
-    Path("/Library/Fonts/Arial Unicode.ttf"),
-    Path("/System/Library/Fonts/Supplemental/Arial Unicode.ttf"),
-    Path("/System/Library/Fonts/Supplemental/Arial.ttf"),
-    Path("C:/Windows/Fonts/arial.ttf"),
+    Path(__file__).resolve().parent / "fonts" / "LiberationSerif-Bold.ttf",
+    Path("/usr/share/fonts/truetype/liberation/LiberationSerif-Bold.ttf"),
 )
 
 
@@ -80,6 +89,8 @@ class _Placement:
     source_rect: fitz.Rect
     value: str
     fontsize: float
+    baseline: float
+    room: float
     prefix: str = ""
     in_place: bool = False
 
@@ -153,7 +164,7 @@ def _field_values(payload: dict) -> dict[str, str]:
         title = FIELD_TITLES[key]
         if not isinstance(raw, str) or not raw.strip():
             raise PdfProcessError(f"Заполните поле «{title}».")
-        text = raw.strip()
+        text = "-" if _is_dash(raw.strip()) else raw.strip()
         if len(text) > MAX_VALUE_LENGTH:
             raise PdfProcessError(f"Поле «{title}» длиннее {MAX_VALUE_LENGTH} символов.")
         values[key] = text
@@ -169,7 +180,9 @@ def _search_strings(payload: dict, map_key: str) -> dict[str, str]:
     for key in FIELD_KEYS:
         raw = raw_map.get(key)
         title = FIELD_TITLES[key]
-        if not isinstance(raw, str) or (not raw.strip() and key not in BLANK_PASSPORT_OF):
+        if not isinstance(raw, str) or (
+            not raw.strip() and key not in BLANK_PASSPORT_OF and key not in NO_PRINTED_DATE
+        ):
             raise PdfProcessError(f"Не задана строка поиска для «{title}».")
         needle = raw.strip()
         if len(needle) > MAX_NEEDLE_LENGTH:
@@ -189,12 +202,18 @@ def _placements_for(
     mode: str,
 ) -> list[_Placement]:
     title = FIELD_TITLES[key]
+    if key in NO_PRINTED_DATE and not needles[key]:
+        return []
     if key in BLANK_PASSPORT_OF and not needles[key]:
         surname, _given = _split_fio(dummies[BLANK_PASSPORT_OF[key]], FIELD_TITLES[BLANK_PASSPORT_OF[key]])
         return _blank_passport_slots(doc, surname, value, title)
     if key in PAIR_FIO_FIELDS and mode == "replace":
         return _replace_split_fio(doc, needles[key], value, title)
     return _locate_all(doc, needles[key], value, title, mode)
+
+
+def _is_dash(text: str) -> bool:
+    return text in _DASH_VALUES
 
 
 def _split_fio(text: str, title: str) -> tuple[str, str]:
@@ -205,8 +224,8 @@ def _split_fio(text: str, title: str) -> tuple[str, str]:
 
 
 def _pair_values(value: str, title: str) -> tuple[str, str]:
-    # A typed hyphen is the value for both cells, not an empty field.
-    if value == "-":
+    # A single hyphen fills both cells. It is not an empty field.
+    if _is_dash(value):
         return "-", "-"
     return _split_fio(value, title)
 
@@ -243,6 +262,8 @@ def _blank_passport_slots(
                 source_rect=rect,
                 value=value,
                 fontsize=row.fontsize,
+                baseline=row.baseline,
+                room=rect.width,
                 in_place=True,
             )
         )
@@ -288,22 +309,28 @@ def _locate_all(
             continue
         if mode == "anchor":
             rect = hits[0]
+            size, baseline = _span_metrics(page, rect)
             found.append(
                 _Placement(
                     page_index=index,
                     source_rect=rect,
                     value=value,
-                    fontsize=_font_size_near(page, rect),
+                    fontsize=size,
+                    baseline=baseline,
+                    room=ANCHOR_FIELD_WIDTH,
                 )
             )
             return found
         for rect in _whole_matches(page, hits, needle):
+            size, baseline = _span_metrics(page, rect)
             found.append(
                 _Placement(
                     page_index=index,
                     source_rect=rect,
                     value=value,
-                    fontsize=_font_size_near(page, rect),
+                    fontsize=size,
+                    baseline=baseline,
+                    room=_room_width(page, rect),
                     prefix=_kept_prefix(page, rect, needle),
                     in_place=True,
                 )
@@ -418,20 +445,50 @@ def _kept_prefix(page: fitz.Page, rect: fitz.Rect, needle: str) -> str:
     return ""
 
 
-def _font_size_near(page: fitz.Page, rect: fitz.Rect) -> float:
+def _span_metrics(page: fitz.Page, rect: fitz.Rect) -> tuple[float, float]:
+    size = DEFAULT_FONT_SIZE
+    baseline = rect.y1 - size * 0.24
+    best = 0.0
+    clip = fitz.Rect(rect.x0 - 1, rect.y0 - 1, rect.x1 + 1, rect.y1 + 1)
     try:
-        data = page.get_text("dict", clip=rect)
+        data = page.get_text("dict", clip=clip)
     except Exception:
-        return DEFAULT_FONT_SIZE
+        return size, baseline
     for block in data.get("blocks", []):
         if block.get("type", 0) != 0:
             continue
         for line in block.get("lines", []):
             for span in line.get("spans", []):
-                size = span.get("size")
-                if isinstance(size, (int, float)) and 6 <= float(size) <= 36:
-                    return round(float(size), 2)
-    return DEFAULT_FONT_SIZE
+                bbox = span.get("bbox")
+                if not bbox:
+                    continue
+                span_rect = fitz.Rect(bbox)
+                inter = span_rect & rect
+                if inter.is_empty:
+                    continue
+                area = inter.get_area()
+                if area <= best:
+                    continue
+                best = area
+                raw_size = span.get("size")
+                if isinstance(raw_size, (int, float)) and 6 <= float(raw_size) <= 36:
+                    size = float(raw_size)
+                origin = span.get("origin")
+                if isinstance(origin, (list, tuple)) and len(origin) >= 2:
+                    baseline = float(origin[1])
+    return size, baseline
+
+
+def _room_width(page: fitz.Page, rect: fitz.Rect) -> float:
+    limit = page.rect.x1 - 28
+    for word in page.get_text("words"):
+        word_rect = fitz.Rect(word[:4])
+        if word_rect.x0 <= rect.x1 + 0.4:
+            continue
+        if not _same_line(rect, word_rect):
+            continue
+        limit = min(limit, word_rect.x0 - 2)
+    return max(rect.width, limit - rect.x0)
 
 
 def _apply_field(
@@ -442,28 +499,27 @@ def _apply_field(
     fontfile: str,
 ) -> None:
     source = placement.source_rect
+    written = placement.value
+    if placement.prefix and not written.startswith(placement.prefix):
+        written = f"{placement.prefix}{written}"
     if mode == "anchor" and not placement.in_place:
         redact_rect = _anchor_slot(page, source)
         insert_x = redact_rect.x0 + 2
         available = max(0.0, redact_rect.width - 4)
-        fontsize = _fitted_size(font, placement.value, placement.fontsize, available)
+        baseline = placement.baseline
     else:
-        redact_rect = _clip_rect(
-            page,
-            fitz.Rect(source.x0 - 0.6, source.y0 - 0.6, source.x1 + 0.8, source.y1 + 0.8),
-        )
+        # Cover the old glyphs only. Do not grow the box into the next cell or the rules.
+        redact_rect = fitz.Rect(source)
         insert_x = source.x0
-        fontsize = _fitted_size(font, placement.prefix + placement.value, placement.fontsize, redact_rect.width - 1)
-
-    written = placement.value
-    if placement.prefix and not written.startswith(placement.prefix):
-        written = f"{placement.prefix}{written}"
+        available = max(source.width, placement.room)
+        baseline = placement.baseline
+    fontsize = _fitted_size(font, written, placement.fontsize, available)
 
     page.add_redact_annot(redact_rect, fill=(1, 1, 1))
     _apply_redactions(page)
     # Redaction drops a font that was registered but not used yet.
     page.insert_font(fontname=_FONT_NAME, fontfile=fontfile)
-    point = fitz.Point(insert_x, source.y1 - max(1.0, placement.fontsize * 0.2))
+    point = fitz.Point(insert_x, baseline)
     page.insert_text(
         point,
         written,
@@ -509,7 +565,7 @@ def _fitted_size(font: fitz.Font, text: str, fontsize: float, available: float) 
 def _apply_redactions(page: fitz.Page) -> None:
     kwargs: dict[str, int] = {}
     images = getattr(fitz, "PDF_REDACT_IMAGE_NONE", None)
-    graphics = getattr(fitz, "PDF_REDACT_LINE_ART_REMOVE_IF_COVERED", None)
+    graphics = getattr(fitz, "PDF_REDACT_LINE_ART_NONE", None)
     text_mode = getattr(fitz, "PDF_REDACT_TEXT_REMOVE", None)
     if images is not None:
         kwargs["images"] = images
@@ -537,6 +593,6 @@ def _resolve_font() -> str:
         if candidate.is_file():
             return str(candidate)
     raise PdfProcessError(
-        "Не найден шрифт с кириллицей (DejaVuSans.ttf).",
+        "Не найден Liberation Serif Bold (LiberationSerif-Bold.ttf).",
         status_code=500,
     )
