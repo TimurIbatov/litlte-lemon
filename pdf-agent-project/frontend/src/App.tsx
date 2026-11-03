@@ -184,12 +184,13 @@ function formatBytes(size: number): string {
   return `${(size / (1024 * 1024)).toFixed(1)} МБ`;
 }
 
-function filledName(name: string): string {
-  const trimmed = name.trim() || "document.pdf";
-  if (trimmed.toLowerCase().endsWith(".pdf")) {
-    return `${trimmed.slice(0, -4)}-filled.pdf`;
-  }
-  return `${trimmed}-filled.pdf`;
+function workerPdfName(workerName: string): string {
+  const stem = workerName
+    .trim()
+    .replace(/\s+/g, "_")
+    .replace(/[<>:"/\\|?*\u0000-\u001f]/g, "")
+    .replace(/[. ]+$/g, "");
+  return `${stem || "document"}.pdf`;
 }
 
 async function readDetail(data: unknown): Promise<string | null> {
@@ -340,7 +341,7 @@ export default function App() {
         setError("Сервер вернул ответ, который не является PDF.");
         return;
       }
-      setResult({ blob, filename: filledName(file.name) });
+      setResult({ blob, filename: workerPdfName(values.workerFio) });
     } catch (submitError) {
       setError(await errorMessage(submitError));
     } finally {

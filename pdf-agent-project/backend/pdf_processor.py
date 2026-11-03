@@ -93,6 +93,7 @@ class _Placement:
     room: float
     prefix: str = ""
     in_place: bool = False
+    fit_width: float = 0.0
 
 
 def process_pdf_bytes(pdf_bytes: bytes, payload: object) -> bytes:
@@ -209,7 +210,14 @@ def _placements_for(
         return _blank_passport_slots(doc, surname, value, title)
     if key in PAIR_FIO_FIELDS and mode == "replace":
         return _replace_split_fio(doc, needles[key], value, title)
-    return _locate_all(doc, needles[key], value, title, mode)
+    return _locate_all(
+        doc,
+        needles[key],
+        value,
+        title,
+        mode,
+        fit_to_span=key == "workerFio" and mode == "replace",
+    )
 
 
 def _is_dash(text: str) -> bool:
@@ -296,6 +304,7 @@ def _locate_all(
     value: str,
     title: str,
     mode: str,
+    fit_to_span: bool = False,
 ) -> list[_Placement]:
     found: list[_Placement] = []
     for index, page in enumerate(doc):
@@ -318,6 +327,7 @@ def _locate_all(
                     fontsize=size,
                     baseline=baseline,
                     room=ANCHOR_FIELD_WIDTH,
+                    fit_width=rect.width if fit_to_span else 0.0,
                 )
             )
             return found
@@ -333,6 +343,7 @@ def _locate_all(
                     room=_room_width(page, rect),
                     prefix=_kept_prefix(page, rect, needle),
                     in_place=True,
+                    fit_width=rect.width if fit_to_span else 0.0,
                 )
             )
     if not found:
@@ -513,22 +524,71 @@ def _apply_field(
         insert_x = source.x0
         available = max(source.width, placement.room)
         baseline = placement.baseline
-    fontsize = _fitted_size(font, written, placement.fontsize, available)
+    fontsize = placement.fontsize
+    if placement.fit_width <= 1:
+        fontsize = _fitted_size(font, written, fontsize, available)
 
     page.add_redact_annot(redact_rect, fill=(1, 1, 1))
     _apply_redactions(page)
     # Redaction drops a font that was registered but not used yet.
     page.insert_font(fontname=_FONT_NAME, fontfile=fontfile)
     point = fitz.Point(insert_x, baseline)
-    page.insert_text(
-        point,
-        written,
-        fontname=_FONT_NAME,
-        fontfile=fontfile,
-        fontsize=fontsize,
-        color=(0, 0, 0),
-        overlay=True,
-    )
+    _paint_name(page, point, written, font, fontfile, fontsize, placement.fit_width)
+
+
+def _paint_name(
+    page: fitz.Page,
+    point: fitz.Point,
+    text: str,
+    font: fitz.Font,
+    fontfile: str,
+    fontsize: float,
+    fit_width: float,
+) -> None:
+    """Draw worker names across the old name's width. Height and baseline stay put."""
+    if fit_width <= 1 or not text:
+        page.insert_text(
+            point,
+            text,
+            fontname=_FONT_NAME,
+            fontfile=fontfile,
+            fontsize=fontsize,
+            color=(0, 0, 0),
+            overlay=True,
+        )
+        return
+    widths = [max(0.0, font.text_length(ch, fontsize=fontsize)) for ch in text]
+    natural = sum(widths)
+    if natural <= 0:
+        return
+    if natural > fit_width + 0.4:
+        hscale = fit_width / natural
+        page.insert_text(
+            point,
+            text,
+            fontname=_FONT_NAME,
+            fontfile=fontfile,
+            fontsize=fontsize,
+            color=(0, 0, 0),
+            overlay=True,
+            morph=(point, fitz.Matrix(hscale, 1)),
+        )
+        return
+    gaps = max(1, len(text) - 1)
+    pad = (fit_width - natural) / gaps
+    x = point.x
+    for ch, width in zip(text, widths):
+        if ch != " ":
+            page.insert_text(
+                fitz.Point(x, point.y),
+                ch,
+                fontname=_FONT_NAME,
+                fontfile=fontfile,
+                fontsize=fontsize,
+                color=(0, 0, 0),
+                overlay=True,
+            )
+        x += width + pad
 
 
 def _anchor_slot(page: fitz.Page, source: fitz.Rect) -> fitz.Rect:
