@@ -1,8 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
 import axios from "axios";
 
 const API_URL = "http://localhost:8000/api/process-pdf";
+const BUNDLED_PDF_URL = "/affidavit-artikov-zhasurbek.pdf";
+const BUNDLED_PDF_NAME = "affidavit-artikov-zhasurbek.pdf";
 
 type Mode = "anchor" | "replace";
 type FieldKey =
@@ -195,15 +197,41 @@ export default function App() {
   const [anchors, setAnchors] = useState<SearchMap>(DEFAULT_ANCHORS);
   const [dummies, setDummies] = useState<SearchMap>(DEFAULT_DUMMIES);
   const [file, setFile] = useState<File | null>(null);
+  const [fileSource, setFileSource] = useState<"bundled" | "upload" | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{ blob: Blob; filename: string } | null>(null);
+  const pickedByUser = useRef(false);
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", dark);
   }, [dark]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadBundled() {
+      try {
+        const response = await fetch(BUNDLED_PDF_URL);
+        if (!response.ok) {
+          throw new Error(String(response.status));
+        }
+        const blob = await response.blob();
+        if (cancelled || pickedByUser.current) return;
+        const bundled = new File([blob], BUNDLED_PDF_NAME, { type: "application/pdf" });
+        await acceptFile(bundled, "bundled");
+      } catch {
+        if (!cancelled && !pickedByUser.current) {
+          setFileError("Не удалось открыть встроенный аффидавит.");
+        }
+      }
+    }
+    void loadBundled();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   function setValue(key: FieldKey, value: string) {
     setValues((current) => ({ ...current, [key]: value }));
@@ -213,29 +241,26 @@ export default function App() {
   const canSubmit = Boolean(file) && dataReady && !loading;
   const searchMap = mode === "anchor" ? anchors : dummies;
 
-  async function acceptFile(next: File | null) {
+  async function acceptFile(next: File | null, source: "bundled" | "upload" = "upload") {
     if (!next) return;
+    if (source === "upload") pickedByUser.current = true;
     if (!isPdfFile(next)) {
-      setFile(null);
-      setResult(null);
       setFileError("Нужен файл PDF.");
       return;
     }
     if (next.size === 0) {
-      setFile(null);
-      setResult(null);
       setFileError("Файл PDF пуст.");
       return;
     }
     const header = new Uint8Array(await next.slice(0, 5).arrayBuffer());
     const signature = String.fromCharCode(...header);
     if (!signature.startsWith("%PDF")) {
-      setFile(null);
-      setResult(null);
       setFileError("Файл не похож на PDF.");
       return;
     }
+    if (source === "bundled" && pickedByUser.current) return;
     setFile(next);
+    setFileSource(source);
     setFileError(null);
     setResult(null);
     setError(null);
@@ -405,8 +430,14 @@ export default function App() {
               dragging ? "border-accent bg-accent/5" : "border-line bg-bg/50"
             }`}
           >
-            <p className="text-sm font-medium text-ink">Перетащите PDF сюда или выберите файл</p>
-            <p className="mt-1 text-xs text-muted">Только PDF. Файл не сохраняется на сервере.</p>
+            <p className="text-sm font-medium text-ink">
+              {file
+                ? "Перетащите другой PDF, чтобы заменить выбранный"
+                : "Открываем встроенный аффидавит…"}
+            </p>
+            <p className="mt-1 text-xs text-muted">
+              Бланк уже приложен. Другой PDF — по желанию. Файл не сохраняется на сервере.
+            </p>
             <label className="relative mt-4 inline-flex cursor-pointer items-center">
               <span className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-accentink">
                 Выбрать PDF
@@ -426,6 +457,9 @@ export default function App() {
               <p className="mt-4 rounded-lg border border-line bg-raise px-3 py-2 text-sm text-ink">
                 <span className="font-medium">{file.name}</span>
                 <span className="text-muted"> · {formatBytes(file.size)}</span>
+                {fileSource === "bundled" && (
+                  <span className="mt-1 block text-xs text-muted">Встроенный бланк</span>
+                )}
               </p>
             )}
             {fileError && (
@@ -451,7 +485,9 @@ export default function App() {
           </button>
           {!canSubmit && !loading && (
             <p className="mt-2 text-center text-xs text-muted">
-              Кнопка включится, когда загружен PDF и заполнены все поля. Новые значения вводите сами: текущий текст формы не подставляется.
+              {file
+                ? "Кнопка включится, когда заполнены все поля. Новые значения вводите сами: текущий текст формы не подставляется."
+                : "Кнопка включится, когда бланк открыт и заполнены все поля."}
             </p>
           )}
 
