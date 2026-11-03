@@ -107,13 +107,9 @@ def process_pdf_bytes(pdf_bytes: bytes, payload: object) -> bytes:
                 _placements_for(doc, key, values[key], needles, dummies, mode)
             )
         font = fitz.Font(fontfile=fontfile)
-        loaded_pages: set[int] = set()
         for placement in placements:
             page = doc[placement.page_index]
-            if placement.page_index not in loaded_pages:
-                page.insert_font(fontname=_FONT_NAME, fontfile=fontfile)
-                loaded_pages.add(placement.page_index)
-            _apply_field(page, placement, mode, font)
+            _apply_field(page, placement, mode, font, fontfile)
         return doc.tobytes(garbage=4, deflate=True)
     except PdfProcessError:
         raise
@@ -431,7 +427,13 @@ def _font_size_near(page: fitz.Page, rect: fitz.Rect) -> float:
     return DEFAULT_FONT_SIZE
 
 
-def _apply_field(page: fitz.Page, placement: _Placement, mode: str, font: fitz.Font) -> None:
+def _apply_field(
+    page: fitz.Page,
+    placement: _Placement,
+    mode: str,
+    font: fitz.Font,
+    fontfile: str,
+) -> None:
     source = placement.source_rect
     if mode == "anchor" and not placement.in_place:
         redact_rect = _anchor_slot(page, source)
@@ -452,11 +454,14 @@ def _apply_field(page: fitz.Page, placement: _Placement, mode: str, font: fitz.F
 
     page.add_redact_annot(redact_rect, fill=(1, 1, 1))
     _apply_redactions(page)
+    # Redaction drops a font that was registered but not used yet.
+    page.insert_font(fontname=_FONT_NAME, fontfile=fontfile)
     point = fitz.Point(insert_x, source.y1 - max(1.0, placement.fontsize * 0.2))
     page.insert_text(
         point,
         written,
         fontname=_FONT_NAME,
+        fontfile=fontfile,
         fontsize=fontsize,
         color=(0, 0, 0),
         overlay=True,
