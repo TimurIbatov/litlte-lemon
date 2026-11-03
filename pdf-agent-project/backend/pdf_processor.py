@@ -1,8 +1,9 @@
-"""Fill four personal fields in a PDF, entirely in memory."""
+"""Fill affidavit name and passport fields in memory."""
 
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -17,6 +18,12 @@ FIELD_KEYS = (
     "motherSurname",
     "motherGiven",
     "motherPassport",
+    "spouseFio",
+    "spousePassport",
+    "child1Fio",
+    "child1Passport",
+    "child2Fio",
+    "child2Passport",
 )
 FIELD_TITLES = {
     "workerFio": "ФИО работника",
@@ -27,7 +34,21 @@ FIELD_TITLES = {
     "motherSurname": "Фамилия матери",
     "motherGiven": "Имя матери",
     "motherPassport": "Паспорт матери",
+    "spouseFio": "ФИО супруги",
+    "spousePassport": "Паспорт супруги",
+    "child1Fio": "ФИО ребенка 1",
+    "child1Passport": "Паспорт ребенка 1",
+    "child2Fio": "ФИО ребенка 2",
+    "child2Passport": "Паспорт ребенка 2",
 }
+# Surname and given name are separate cells. The form stores them as one FIO string.
+PAIR_FIO_FIELDS = frozenset({"spouseFio", "child1Fio", "child2Fio"})
+# Passport cell is empty. Write it on the row of the paired surname.
+BLANK_PASSPORT_OF = {
+    "child1Passport": "child1Fio",
+    "child2Passport": "child2Fio",
+}
+_PASSPORT_TOKEN = re.compile(r"^[A-Z]{1,3}\d{5,}$")
 DEFAULT_FONT_SIZE = 11.0
 ANCHOR_FIELD_WIDTH = 300.0
 MAX_VALUE_LENGTH = 400
@@ -60,6 +81,7 @@ class _Placement:
     value: str
     fontsize: float
     prefix: str = ""
+    in_place: bool = False
 
 
 def process_pdf_bytes(pdf_bytes: bytes, payload: object) -> bytes:
@@ -71,7 +93,9 @@ def process_pdf_bytes(pdf_bytes: bytes, payload: object) -> bytes:
         raise PdfProcessError('Поле mode должно быть "anchor" или "replace".')
 
     values = _field_values(payload)
-    needles = _search_strings(payload, "anchors" if mode == "anchor" else "dummies")
+    dummies = _search_strings(payload, "dummies")
+    anchors = _search_strings(payload, "anchors")
+    needles = anchors if mode == "anchor" else dummies
     fontfile = _resolve_font()
 
     doc: fitz.Document | None = None
@@ -80,7 +104,7 @@ def process_pdf_bytes(pdf_bytes: bytes, payload: object) -> bytes:
         placements: list[_Placement] = []
         for key in FIELD_KEYS:
             placements.extend(
-                _locate_all(doc, needles[key], values[key], FIELD_TITLES[key], mode)
+                _placements_for(doc, key, values[key], needles, dummies, mode)
             )
         font = fitz.Font(fontfile=fontfile)
         loaded_pages: set[int] = set()
@@ -149,7 +173,7 @@ def _search_strings(payload: dict, map_key: str) -> dict[str, str]:
     for key in FIELD_KEYS:
         raw = raw_map.get(key)
         title = FIELD_TITLES[key]
-        if not isinstance(raw, str) or not raw.strip():
+        if not isinstance(raw, str) or (not raw.strip() and key not in BLANK_PASSPORT_OF):
             raise PdfProcessError(f"Не задана строка поиска для «{title}».")
         needle = raw.strip()
         if len(needle) > MAX_NEEDLE_LENGTH:
@@ -158,6 +182,88 @@ def _search_strings(payload: dict, map_key: str) -> dict[str, str]:
             )
         needles[key] = needle
     return needles
+
+
+def _placements_for(
+    doc: fitz.Document,
+    key: str,
+    value: str,
+    needles: dict[str, str],
+    dummies: dict[str, str],
+    mode: str,
+) -> list[_Placement]:
+    title = FIELD_TITLES[key]
+    if key in BLANK_PASSPORT_OF and not needles[key]:
+        surname, _given = _split_fio(dummies[BLANK_PASSPORT_OF[key]], FIELD_TITLES[BLANK_PASSPORT_OF[key]])
+        return _blank_passport_slots(doc, surname, value, title)
+    if key in PAIR_FIO_FIELDS and mode == "replace":
+        return _replace_split_fio(doc, needles[key], value, title)
+    return _locate_all(doc, needles[key], value, title, mode)
+
+
+def _split_fio(text: str, title: str) -> tuple[str, str]:
+    parts = text.split()
+    if len(parts) < 2:
+        raise PdfProcessError(f"Поле «{title}» нужно в виде «фамилия имя».")
+    return parts[0], " ".join(parts[1:])
+
+
+def _replace_split_fio(doc: fitz.Document, needle: str, value: str, title: str) -> list[_Placement]:
+    surname_needle, given_needle = _split_fio(needle, title)
+    surname_value, given_value = _split_fio(value, title)
+    return [
+        *_locate_all(doc, surname_needle, surname_value, title, "replace"),
+        *_locate_all(doc, given_needle, given_value, title, "replace"),
+    ]
+
+
+def _blank_passport_slots(
+    doc: fitz.Document,
+    surname: str,
+    value: str,
+    title: str,
+) -> list[_Placement]:
+    rows = _locate_all(doc, surname, value, title, "replace")
+    slots: list[_Placement] = []
+    for row in rows:
+        page = doc[row.page_index]
+        x0 = _passport_column_x(page, row.source_rect)
+        x1 = min(row.source_rect.x0 - 8, x0 + 90)
+        if x1 - x0 < 24:
+            raise PdfProcessError(
+                f"Не удалось найти пустую ячейку паспорта в строке «{surname}» ({title})."
+            )
+        rect = fitz.Rect(x0, row.source_rect.y0, x1, row.source_rect.y1)
+        slots.append(
+            _Placement(
+                page_index=row.page_index,
+                source_rect=rect,
+                value=value,
+                fontsize=row.fontsize,
+                in_place=True,
+            )
+        )
+    return slots
+
+
+def _passport_column_x(page: fitz.Page, surname: fitz.Rect) -> float:
+    surname_y = (surname.y0 + surname.y1) / 2
+    found: list[float] = []
+    for word in page.get_text("words"):
+        token = _norm_token(word[4]).upper()
+        if not _PASSPORT_TOKEN.match(token):
+            continue
+        rect = fitz.Rect(word[:4])
+        if rect.x1 > surname.x0 - 8:
+            continue
+        word_y = (rect.y0 + rect.y1) / 2
+        if abs(word_y - surname_y) > 90:
+            continue
+        found.append(rect.x0)
+    if found:
+        found.sort()
+        return found[len(found) // 2]
+    return max(page.rect.x0 + 8, surname.x0 - 94)
 
 
 def _locate_all(
@@ -196,6 +302,7 @@ def _locate_all(
                     value=value,
                     fontsize=_font_size_near(page, rect),
                     prefix=_kept_prefix(page, rect, needle),
+                    in_place=True,
                 )
             )
     if not found:
@@ -326,7 +433,7 @@ def _font_size_near(page: fitz.Page, rect: fitz.Rect) -> float:
 
 def _apply_field(page: fitz.Page, placement: _Placement, mode: str, font: fitz.Font) -> None:
     source = placement.source_rect
-    if mode == "anchor":
+    if mode == "anchor" and not placement.in_place:
         redact_rect = _anchor_slot(page, source)
         insert_x = redact_rect.x0 + 2
         available = max(0.0, redact_rect.width - 4)

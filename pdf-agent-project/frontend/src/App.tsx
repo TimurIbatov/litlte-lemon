@@ -13,7 +13,13 @@ type FieldKey =
   | "fatherPassport"
   | "motherSurname"
   | "motherGiven"
-  | "motherPassport";
+  | "motherPassport"
+  | "spouseFio"
+  | "spousePassport"
+  | "child1Fio"
+  | "child1Passport"
+  | "child2Fio"
+  | "child2Passport";
 type SearchMap = Record<FieldKey, string>;
 
 const DEFAULT_ANCHORS: SearchMap = {
@@ -25,6 +31,12 @@ const DEFAULT_ANCHORS: SearchMap = {
   motherSurname: "Мать",
   motherGiven: "Mother",
   motherPassport: "AE3220287",
+  spouseFio: "СУПРУГА",
+  spousePassport: "AD4559629",
+  child1Fio: "ДЕТИ",
+  child1Passport: "",
+  child2Fio: "CHild",
+  child2Passport: "",
 };
 
 const DEFAULT_DUMMIES: SearchMap = {
@@ -36,6 +48,12 @@ const DEFAULT_DUMMIES: SearchMap = {
   motherSurname: "ARTIKOVA",
   motherGiven: "RAXNAMO",
   motherPassport: "AE3220287",
+  spouseFio: "ARTIQOVA MARHABO",
+  spousePassport: "AD4559629",
+  child1Fio: "ALIJONOV ABDUSALOM",
+  child1Passport: "",
+  child2Fio: "ALIJONOVA XUMORAXON",
+  child2Passport: "",
 };
 
 const DATA_FIELDS: { key: FieldKey; label: string; placeholder: string; group: string }[] = [
@@ -52,9 +70,25 @@ const DATA_FIELDS: { key: FieldKey; label: string; placeholder: string; group: s
   { key: "motherSurname", label: "Фамилия матери", placeholder: "фамилия", group: "Мать" },
   { key: "motherGiven", label: "Имя матери", placeholder: "имя", group: "Мать" },
   { key: "motherPassport", label: "Паспорт матери", placeholder: "серия и номер", group: "Мать" },
+  { key: "spouseFio", label: "ФИО супруги", placeholder: "фамилия имя", group: "Супруга" },
+  { key: "spousePassport", label: "Паспорт супруги", placeholder: "серия и номер", group: "Супруга" },
+  { key: "child1Fio", label: "ФИО ребенка 1", placeholder: "фамилия имя", group: "Ребенок 1" },
+  {
+    key: "child1Passport",
+    label: "Паспорт ребенка 1",
+    placeholder: "серия и номер",
+    group: "Ребенок 1",
+  },
+  { key: "child2Fio", label: "ФИО ребенка 2", placeholder: "фамилия имя", group: "Ребенок 2" },
+  {
+    key: "child2Passport",
+    label: "Паспорт ребенка 2",
+    placeholder: "серия и номер",
+    group: "Ребенок 2",
+  },
 ];
 
-const GROUPS = ["Работник", "Отец", "Мать"] as const;
+const GROUPS = ["Работник", "Отец", "Мать", "Супруга", "Ребенок 1", "Ребенок 2"] as const;
 
 const SEARCH_LABELS: Record<FieldKey, string> = {
   workerFio: "ФИО работника",
@@ -65,6 +99,12 @@ const SEARCH_LABELS: Record<FieldKey, string> = {
   motherSurname: "Фамилия матери",
   motherGiven: "Имя матери",
   motherPassport: "Паспорт матери",
+  spouseFio: "ФИО супруги",
+  spousePassport: "Паспорт супруги",
+  child1Fio: "ФИО ребенка 1",
+  child1Passport: "Паспорт ребенка 1",
+  child2Fio: "ФИО ребенка 2",
+  child2Passport: "Паспорт ребенка 2",
 };
 
 const EMPTY_VALUES: SearchMap = {
@@ -76,6 +116,12 @@ const EMPTY_VALUES: SearchMap = {
   motherSurname: "",
   motherGiven: "",
   motherPassport: "",
+  spouseFio: "",
+  spousePassport: "",
+  child1Fio: "",
+  child1Passport: "",
+  child2Fio: "",
+  child2Passport: "",
 };
 
 const inputClass =
@@ -264,8 +310,8 @@ export default function App() {
           </p>
           <h1 className="display mt-2 text-3xl text-ink sm:text-4xl">Локальный редактор PDF</h1>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">
-            Меняет в аффидавите ФИО и паспорт работника и данные родителей — только там, где
-            форма их уже печатает. Файл обрабатывается в памяти и никуда не отправляется.
+            Меняет в аффидавите ФИО и паспорт работника, родителей, супруги и обоих детей —
+            только в этих ячейках. Файл обрабатывается в памяти и никуда не отправляется.
           </p>
         </div>
         <button
@@ -322,7 +368,7 @@ export default function App() {
               <p className="text-xs leading-5 text-muted">
                 {mode === "anchor"
                   ? "Якорь — подпись в PDF. Значение будет вписано справа от неё. Для таблицы семьи это заденет соседние колонки."
-                  : "Рыба — текст, который уже напечатан в аффидавите. Заменяются все целые вхождения, без чужих фамилий."}
+                  : "Рыба — текст, который уже напечатан. Пустой паспорт ребенка — это пустая ячейка слева от его фамилии."}
               </p>
               {DATA_FIELDS.map((field) => (
                 <label key={`${mode}-${field.key}`} htmlFor={`search-${field.key}`} className="block text-sm">

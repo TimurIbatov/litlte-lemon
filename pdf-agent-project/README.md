@@ -1,8 +1,8 @@
 # Local PDF form editor
 
-Fills a worker affidavit on this machine: the worker’s name and passport, plus the father’s and mother’s surname, given name, and passport. The file and the personal fields stay in memory for the request and are not stored or sent to an external service.
+Fills a worker affidavit on this machine: the worker’s name and passport, the father’s and mother’s surname, given name, and passport, and the spouse’s and both children’s names and passports. The file and the personal fields stay in memory for the request and are not stored or sent to an external service.
 
-The form opens in replace mode. Search strings match the printed affidavit: worker name and passport, and the parent cells. Anchor mode is still available; on the family table a 300px box to the right of a row label also covers the next columns.
+The form opens in replace mode. Search strings match the text printed in the affidavit. The children’s passport cells are blank, so those values are written into the empty cell to the left of each child’s surname. Anchor mode is still available; on the family table a 300px box to the right of a row label also covers the next columns.
 
 Two modes:
 
