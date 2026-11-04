@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
-import axios from "axios";
+import { FillError, fillAffidavit } from "./fillPdf";
+import type { FieldKey as FillFieldKey, Mode as FillMode } from "./fillPdf";
 
-const API_URL = "http://localhost:8000/api/process-pdf";
-const BUNDLED_PDF_URL = "/affidavit-artikov-zhasurbek.pdf";
+const BUNDLED_PDF_URL = `${import.meta.env.BASE_URL}affidavit-artikov-zhasurbek.pdf`;
 const BUNDLED_PDF_NAME = "affidavit-artikov-zhasurbek.pdf";
 
 type Mode = "anchor" | "replace";
@@ -193,42 +193,8 @@ function workerPdfName(workerName: string): string {
   return `${stem || "document"}.pdf`;
 }
 
-async function readDetail(data: unknown): Promise<string | null> {
-  let text = "";
-  if (typeof data === "string") {
-    text = data;
-  } else if (data instanceof Blob) {
-    text = await data.text();
-  }
-  if (!text) return null;
-  try {
-    const parsed = JSON.parse(text) as { detail?: unknown };
-    if (typeof parsed.detail === "string") return parsed.detail;
-    if (Array.isArray(parsed.detail)) {
-      return parsed.detail
-        .map((item) => {
-          if (item && typeof item === "object" && "msg" in item) {
-            return String((item as { msg: unknown }).msg);
-          }
-          return String(item);
-        })
-        .join("; ");
-    }
-  } catch {
-    return text.slice(0, 300);
-  }
-  return text.slice(0, 300);
-}
-
-async function errorMessage(error: unknown): Promise<string> {
-  if (axios.isAxiosError(error)) {
-    if (!error.response) {
-      return "Сервер недоступен. Запустите backend на http://localhost:8000.";
-    }
-    const detail = await readDetail(error.response.data);
-    if (detail) return detail;
-    return `Сервер вернул ошибку ${error.response.status}.`;
-  }
+function errorMessage(error: unknown): string {
+  if (error instanceof FillError) return error.message;
   return "Не удалось сформировать документ.";
 }
 
@@ -317,33 +283,21 @@ export default function App() {
     setError(null);
     setResult(null);
 
-    const payload = {
-      ...Object.fromEntries(
-        DATA_FIELDS.map((field) => [field.key, values[field.key].trim()]),
-      ),
-      mode,
-      anchors: DEFAULT_ANCHORS,
-      dummies: DEFAULT_DUMMIES,
-    };
-    const body = new FormData();
-    body.append("file", file);
-    body.append("jsonData", JSON.stringify(payload));
-
     try {
-      const response = await axios.post<Blob>(API_URL, body, {
-        responseType: "blob",
-        timeout: 120000,
-      });
-      const blob = response.data;
-      const header = new Uint8Array(await blob.slice(0, 5).arrayBuffer());
-      const signature = String.fromCharCode(...header);
-      if (!signature.startsWith("%PDF")) {
-        setError("Сервер вернул ответ, который не является PDF.");
-        return;
-      }
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      const filled = await fillAffidavit(
+        bytes,
+        values as Record<FillFieldKey, string>,
+        mode as FillMode,
+        DEFAULT_ANCHORS as Record<FillFieldKey, string>,
+        DEFAULT_DUMMIES as Record<FillFieldKey, string>,
+      );
+      const copy = new Uint8Array(filled.byteLength);
+      copy.set(filled);
+      const blob = new Blob([copy.buffer], { type: "application/pdf" });
       setResult({ blob, filename: workerPdfName(values.workerFio) });
     } catch (submitError) {
-      setError(await errorMessage(submitError));
+      setError(errorMessage(submitError));
     } finally {
       setLoading(false);
     }
@@ -371,7 +325,7 @@ export default function App() {
           <h1 className="display mt-2 text-3xl text-ink sm:text-4xl">Локальный редактор PDF</h1>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">
             Меняет в аффидавите ФИО, паспорт и дату рождения. Для родителей, супруги и детей
-            «-» вписывается в ячейку. Файл обрабатывается в памяти и никуда не отправляется.
+            «-» вписывается в ячейку. Всё считается в браузере и никуда не отправляется.
           </p>
         </div>
         <button
@@ -442,7 +396,7 @@ export default function App() {
                 : "Открываем встроенный аффидавит…"}
             </p>
             <p className="mt-1 text-xs text-muted">
-              Бланк уже приложен. Другой PDF — по желанию. Файл не сохраняется на сервере.
+              Бланк уже приложен. Другой PDF — по желанию. Файл остаётся в браузере.
             </p>
             <label className="relative mt-4 inline-flex cursor-pointer items-center">
               <span className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-accentink">
