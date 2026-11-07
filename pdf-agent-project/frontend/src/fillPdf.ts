@@ -16,13 +16,6 @@ import {
 import { getDocument, GlobalWorkerOptions, type PDFDocumentProxy } from "pdfjs-dist";
 import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 
-type PdfTextItem = {
-  str: string;
-  transform: number[];
-  width: number;
-  height: number;
-};
-
 GlobalWorkerOptions.workerSrc = workerUrl;
 
 export type FieldKey =
@@ -47,7 +40,6 @@ export type FieldKey =
   | "child2Passport"
   | "child2Dob";
 
-export type Mode = "anchor" | "replace";
 type SearchMap = Record<FieldKey, string>;
 
 const FIELD_KEYS: FieldKey[] = [
@@ -104,7 +96,6 @@ const BLANK_PASSPORT: Partial<Record<FieldKey, FieldKey>> = {
 const NO_PRINTED_DATE = new Set<FieldKey>(["workerDob"]);
 const DASHES = new Set(["-", "–", "—", "−", "‑"]);
 const PASSPORT = /^[A-Z]{1,3}\d{5,}$/;
-const ANCHOR_WIDTH = 300;
 
 type Token = {
   raw: string;
@@ -156,46 +147,6 @@ function splitFio(text: string, title: string): [string, string] {
 function pairValues(value: string, title: string): [string, string] {
   if (isDash(value)) return ["-", "-"];
   return splitFio(value, title);
-}
-
-function tokensFromItem(item: PdfTextItem, page: number, font: PDFFont): Token[] {
-  const size = Math.abs(Number(item.transform[3])) || item.height || 11;
-  const originX = Number(item.transform[4]);
-  const baseline = Number(item.transform[5]);
-  const chars: string[] = Array.from(item.str);
-  if (!chars.some((ch) => ch.trim())) return [];
-  const widths = chars.map((ch) => Math.max(0, font.widthOfTextAtSize(ch, size)));
-  const sum = widths.reduce((total, width) => total + width, 0) || 1;
-  const scale = item.width > 0 ? item.width / sum : 1;
-  const tokens: Token[] = [];
-  let cursor = 0;
-  let index = 0;
-  while (index < chars.length) {
-    if (/\s/.test(chars[index])) {
-      cursor += widths[index] * scale;
-      index += 1;
-      continue;
-    }
-    const x0 = originX + cursor;
-    let raw = "";
-    while (index < chars.length && !/\s/.test(chars[index])) {
-      raw += chars[index];
-      cursor += widths[index] * scale;
-      index += 1;
-    }
-    const norm = normToken(raw);
-    if (!norm) continue;
-    tokens.push({
-      raw,
-      norm,
-      page,
-      x0,
-      x1: originX + cursor,
-      baseline,
-      size,
-    });
-  }
-  return tokens;
 }
 
 function sameLine(a: Token, b: Token): boolean {
@@ -251,38 +202,23 @@ function placementsForNeedle(
   needle: string,
   value: string,
   title: string,
-  mode: Mode,
   fitToSpan: boolean,
 ): Placement[] {
   const groups = findSequences(tokens, needle);
   if (!groups.length) {
     throw new FillError(`В документе не найдена строка «${needle}» (${title}).`);
   }
-  const chosen = mode === "anchor" ? groups.slice(0, 1) : groups;
-  return chosen.map((sequence) => {
+  return groups.map((sequence) => {
     const box = sequenceBox(sequence);
     const width = box.x1 - box.x0;
-    if (mode === "anchor") {
-      return {
-        page: sequence[0].page,
-        x: box.x1 + 8,
-        baseline: box.baseline,
-        size: box.size,
-        width: ANCHOR_WIDTH,
-        room: ANCHOR_WIDTH,
-        value,
-        prefix: "",
-        fitWidth: 0,
-        cover: true,
-      };
-    }
+    const room = roomWidth(tokens, { page: sequence[0].page, ...box });
     return {
       page: sequence[0].page,
       x: box.x0,
       baseline: box.baseline,
       size: box.size,
       width,
-      room: roomWidth(tokens, { page: sequence[0].page, ...box }),
+      room: Math.min(width, room),
       value,
       prefix: prefixOf(sequence, needle),
       fitWidth: fitToSpan ? width : 0,
@@ -333,18 +269,12 @@ function blankPassportPlacements(tokens: Token[], surname: string, value: string
   });
 }
 
-function collectPlacements(
-  tokens: Token[],
-  values: SearchMap,
-  needles: SearchMap,
-  dummies: SearchMap,
-  mode: Mode,
-): Placement[] {
+function collectPlacements(tokens: Token[], values: SearchMap, dummies: SearchMap): Placement[] {
   const placements: Placement[] = [];
   for (const key of FIELD_KEYS) {
     const title = FIELD_TITLES[key];
     const value = values[key];
-    const needle = needles[key];
+    const needle = dummies[key];
     if (NO_PRINTED_DATE.has(key) && !needle) continue;
     const blankOf = BLANK_PASSPORT[key];
     if (blankOf && !needle) {
@@ -352,25 +282,16 @@ function collectPlacements(
       placements.push(...blankPassportPlacements(tokens, surname, value, title));
       continue;
     }
-    if (PAIR_FIO.has(key) && mode === "replace") {
+    if (PAIR_FIO.has(key)) {
       const [surnameNeedle, givenNeedle] = splitFio(needle, title);
       const [surnameValue, givenValue] = pairValues(value, title);
-      placements.push(...placementsForNeedle(tokens, surnameNeedle, surnameValue, title, "replace", false));
-      placements.push(...placementsForNeedle(tokens, givenNeedle, givenValue, title, "replace", false));
+      placements.push(...placementsForNeedle(tokens, surnameNeedle, surnameValue, title, false));
+      placements.push(...placementsForNeedle(tokens, givenNeedle, givenValue, title, false));
       continue;
     }
-    placements.push(
-      ...placementsForNeedle(tokens, needle, value, title, mode, key === "workerFio" && mode === "replace"),
-    );
+    placements.push(...placementsForNeedle(tokens, needle, value, title, key === "workerFio"));
   }
   return placements;
-}
-
-function fittedSize(font: PDFFont, text: string, size: number, available: number): number {
-  if (available < 12) return size;
-  const width = font.widthOfTextAtSize(text, size);
-  if (width <= available || width <= 0) return size;
-  return Math.max(8, size * (available / width));
 }
 
 function cover(page: PDFPage, placement: Placement, size: number): void {
@@ -384,6 +305,32 @@ function cover(page: PDFPage, placement: Placement, size: number): void {
     color: rgb(1, 1, 1),
     borderWidth: 0,
   });
+}
+
+function paintInside(
+  page: PDFPage,
+  text: string,
+  x: number,
+  baseline: number,
+  size: number,
+  font: PDFFont,
+  maxWidth: number,
+): void {
+  const natural = font.widthOfTextAtSize(text, size);
+  if (natural <= maxWidth + 0.4 || natural <= 0) {
+    page.drawText(text, { x, y: baseline, size, font, color: rgb(0, 0, 0) });
+    return;
+  }
+  const fitted = Math.max(8, size * (maxWidth / natural));
+  const fittedWidth = font.widthOfTextAtSize(text, fitted);
+  if (fittedWidth <= maxWidth + 0.4) {
+    page.drawText(text, { x, y: baseline, size: fitted, font, color: rgb(0, 0, 0) });
+    return;
+  }
+  const hscale = maxWidth / fittedWidth;
+  page.pushOperators(pushGraphicsState(), concatTransformationMatrix(hscale, 0, 0, 1, x * (1 - hscale), 0));
+  page.drawText(text, { x, y: baseline, size: fitted, font, color: rgb(0, 0, 0) });
+  page.pushOperators(popGraphicsState());
 }
 
 function paint(
@@ -425,19 +372,15 @@ function paint(
   });
 }
 
-async function readTokens(doc: PDFDocumentProxy, font: PDFFont): Promise<Token[]> {
+async function readTokens(doc: PDFDocumentProxy): Promise<Token[]> {
   if (doc.numPages === 0) {
     throw new FillError("PDF пуст: в файле нет страниц.");
   }
   const tokens: Token[] = [];
   for (let pageNumber = 1; pageNumber <= doc.numPages; pageNumber += 1) {
     const page = await doc.getPage(pageNumber);
-    const content = await page.getTextContent();
-    for (const item of content.items) {
-      if (!("str" in item) || !item.str.trim()) continue;
-      const textItem = item as PdfTextItem;
-      tokens.push(...tokensFromItem(textItem, pageNumber - 1, font));
-    }
+    const glyphs = glyphGroups(await page.getOperatorList()).flat();
+    tokens.push(...tokensFromGlyphs(glyphs, pageNumber - 1));
   }
   tokens.sort((a, b) => a.page - b.page || b.baseline - a.baseline || a.x0 - b.x0);
   return tokens;
@@ -478,7 +421,7 @@ function loadFontBytes(): Promise<ArrayBuffer> {
 
 const SHOW_TEXT = 44;
 
-type DrawnGlyph = { x: number; y: number };
+type DrawnGlyph = { x: number; y: number; w: number; size: number; unicode: string };
 type StreamToken = { kind: "str" | "op" | "other"; start: number; end: number; value: string };
 
 function latin1(bytes: Uint8Array): string {
@@ -583,6 +526,7 @@ function glyphGroups(operatorList: { fnArray: number[]; argsArray: unknown[] }):
   let text: Matrix = [...IDENTITY];
   let line: Matrix = [...IDENTITY];
   let leading = 0;
+  let fontSize = 1;
   const groups: DrawnGlyph[][] = [];
   operatorList.fnArray.forEach((fn, index) => {
     const args = operatorList.argsArray[index] as number[] | undefined;
@@ -608,6 +552,10 @@ function glyphGroups(operatorList: { fnArray: number[]; argsArray: unknown[] }):
       line = [...text];
       return;
     }
+    if (fn === 37 && args) {
+      fontSize = args[1] || 1;
+      return;
+    }
     if (fn === 36 && args) {
       leading = args[0];
       return;
@@ -626,11 +574,64 @@ function glyphGroups(operatorList: { fnArray: number[]; argsArray: unknown[] }):
       return;
     }
     if (fn !== SHOW_TEXT) return;
-    const user = multiply(text, current);
-    const glyphs = (operatorList.argsArray[index] as [unknown[]])[0] ?? [];
-    groups.push(glyphs.map(() => ({ x: user[4], y: user[5] })));
+    const shown = (operatorList.argsArray[index] as [{ width: number; unicode?: string }[]] | undefined)?.[0] ?? [];
+    const group: DrawnGlyph[] = [];
+    shown.forEach((glyph) => {
+      const user = multiply(text, current);
+      const scaleX = Math.hypot(user[0], user[1]) || 1;
+      const scaleY = Math.hypot(user[2], user[3]) || 1;
+      const advance = ((glyph.width || 0) / 1000) * fontSize;
+      group.push({
+        x: user[4],
+        y: user[5],
+        w: Math.abs(scaleX * advance),
+        size: Math.abs(fontSize * scaleY) || 11,
+        unicode: glyph.unicode ?? "",
+      });
+      text = multiply([1, 0, 0, 1, advance, 0], text);
+    });
+    groups.push(group);
   });
   return groups;
+}
+
+function tokensFromGlyphs(glyphs: DrawnGlyph[], page: number): Token[] {
+  const tokens: Token[] = [];
+  let word: DrawnGlyph[] = [];
+  const flush = () => {
+    if (!word.length) return;
+    const raw = word.map((glyph) => glyph.unicode).join("");
+    const norm = normToken(raw);
+    if (norm) {
+      const x0 = Math.min(...word.map((glyph) => glyph.x));
+      const x1 = Math.max(...word.map((glyph) => glyph.x + glyph.w));
+      tokens.push({
+        raw,
+        norm,
+        page,
+        x0,
+        x1,
+        baseline: word[0].y,
+        size: word[0].size,
+      });
+    }
+    word = [];
+  };
+  glyphs.forEach((glyph, index) => {
+    if (!glyph.unicode.trim()) {
+      flush();
+      return;
+    }
+    const previous = word[word.length - 1];
+    if (previous) {
+      const gap = glyph.x - (previous.x + previous.w);
+      const split = Math.abs(glyph.y - previous.y) > 1.5 || gap > Math.max(1.8, previous.size * 0.22);
+      if (split) flush();
+    }
+    word.push(glyph);
+    if (index === glyphs.length - 1) flush();
+  });
+  return tokens;
 }
 
 function glyphCovered(glyph: DrawnGlyph, rects: Placement[]): boolean {
@@ -720,13 +721,8 @@ async function eraseCoveredText(pdf: PDFDocument, source: PDFDocumentProxy, plac
 export async function fillAffidavit(
   pdfBytes: Uint8Array,
   input: SearchMap,
-  mode: Mode,
-  anchors: SearchMap,
   dummies: SearchMap,
 ): Promise<Uint8Array> {
-  if (mode !== "anchor" && mode !== "replace") {
-    throw new FillError('Поле mode должно быть "anchor" или "replace".');
-  }
   const values = valuesFrom(input);
   let pdf: PDFDocument;
   try {
@@ -747,9 +743,8 @@ export async function fillAffidavit(
   let tokens: Token[];
   let placements: Placement[];
   try {
-    tokens = await readTokens(source, font);
-    const needles = mode === "replace" ? dummies : anchors;
-    placements = collectPlacements(tokens, values, needles, dummies, mode);
+    tokens = await readTokens(source);
+    placements = collectPlacements(tokens, values, dummies);
     await eraseCoveredText(pdf, source, placements);
   } finally {
     await source.cleanup();
@@ -759,9 +754,12 @@ export async function fillAffidavit(
     const written = placement.prefix && !placement.value.startsWith(placement.prefix)
       ? `${placement.prefix}${placement.value}`
       : placement.value;
-    const size = placement.fitWidth > 1 ? placement.size : fittedSize(font, written, placement.size, placement.room);
     if (placement.cover) cover(page, placement, placement.size);
-    paint(page, written, placement.x, placement.baseline, size, font, placement.fitWidth);
+    if (placement.fitWidth > 1) {
+      paint(page, written, placement.x, placement.baseline, placement.size, font, placement.fitWidth);
+    } else {
+      paintInside(page, written, placement.x, placement.baseline, placement.size, font, Math.max(placement.room, 4));
+    }
   }
   return pdf.save();
 }

@@ -1,12 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
 import { FillError, fillAffidavit } from "./fillPdf";
-import type { FieldKey as FillFieldKey, Mode as FillMode } from "./fillPdf";
+import type { FieldKey as FillFieldKey } from "./fillPdf";
 
 const BUNDLED_PDF_URL = `${import.meta.env.BASE_URL}affidavit-artikov-zhasurbek.pdf`;
 const BUNDLED_PDF_NAME = "affidavit-artikov-zhasurbek.pdf";
 
-type Mode = "anchor" | "replace";
 type FieldKey =
   | "workerFio"
   | "workerPassport"
@@ -29,29 +28,6 @@ type FieldKey =
   | "child2Passport"
   | "child2Dob";
 type SearchMap = Record<FieldKey, string>;
-
-const DEFAULT_ANCHORS: SearchMap = {
-  workerFio: "Ф.И.О. работника:",
-  workerPassport: "Номер паспорта:",
-  workerDob: "",
-  fatherSurname: "Отец",
-  fatherGiven: "Father",
-  fatherPassport: "AE3211900",
-  fatherDob: "12.02.1952",
-  motherSurname: "Мать",
-  motherGiven: "Mother",
-  motherPassport: "AE3220287",
-  motherDob: "11.12.1956",
-  spouseFio: "СУПРУГА",
-  spousePassport: "AD4559629",
-  spouseDob: "15.12.1994",
-  child1Fio: "ДЕТИ",
-  child1Passport: "",
-  child1Dob: "23.05.2014",
-  child2Fio: "CHild",
-  child2Passport: "",
-  child2Dob: "22.01.2018",
-};
 
 const DEFAULT_DUMMIES: SearchMap = {
   workerFio: "ARTIKOV JASURBEK",
@@ -205,7 +181,6 @@ function isPdfFile(file: File): boolean {
 export default function App() {
   const [dark, setDark] = useState(prefersDark);
   const [values, setValues] = useState<SearchMap>(EMPTY_VALUES);
-  const [mode, setMode] = useState<Mode>("replace");
   const [file, setFile] = useState<File | null>(null);
   const [fileSource, setFileSource] = useState<"bundled" | "upload" | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
@@ -288,8 +263,6 @@ export default function App() {
       const filled = await fillAffidavit(
         bytes,
         values as Record<FillFieldKey, string>,
-        mode as FillMode,
-        DEFAULT_ANCHORS as Record<FillFieldKey, string>,
         DEFAULT_DUMMIES as Record<FillFieldKey, string>,
       );
       const copy = new Uint8Array(filled.byteLength);
@@ -354,22 +327,6 @@ export default function App() {
               ))}
             </FieldGroup>
           ))}
-
-          <fieldset className="mt-6">
-            <legend className="text-sm font-semibold text-ink">Режим заполнения</legend>
-            <div className="mt-3 grid gap-2 sm:grid-cols-2">
-              <ModeOption
-                checked={mode === "anchor"}
-                title="Вставка по ключевым словам (Якоря)"
-                onSelect={() => setMode("anchor")}
-              />
-              <ModeOption
-                checked={mode === "replace"}
-                title="Замена текста (Рыбы)"
-                onSelect={() => setMode("replace")}
-              />
-            </div>
-          </fieldset>
 
         </section>
 
@@ -522,29 +479,3 @@ function TextField({
   );
 }
 
-function ModeOption({
-  checked,
-  title,
-  onSelect,
-}: {
-  checked: boolean;
-  title: string;
-  onSelect: () => void;
-}) {
-  return (
-    <label
-      className={`flex cursor-pointer items-start gap-2 rounded-xl border px-3 py-3 text-sm leading-5 ${
-        checked ? "border-accent bg-accent/10 text-ink" : "border-line text-muted"
-      }`}
-    >
-      <input
-        type="radio"
-        name="mode"
-        checked={checked}
-        onChange={onSelect}
-        className="mt-1 accent-accent"
-      />
-      <span>{title}</span>
-    </label>
-  );
-}
